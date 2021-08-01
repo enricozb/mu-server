@@ -24,17 +24,14 @@ func (a *API) Run() error {
 	r.HandleFunc("/songs", a.songs).Methods("GET")
 	r.HandleFunc("/songs/{id}", a.song).Methods("GET")
 	r.HandleFunc("/songs/{id}/cover", a.songCover).Methods("GET")
-	r.HandleFunc("/songs/{id}/metadata", a.songMetadata).Methods("GET")
 
 	r.HandleFunc("/albums", a.albums).Methods("GET")
 	r.HandleFunc("/albums/{id}/cover", a.albumCover).Methods("GET")
-	r.HandleFunc("/albums/{id}/songs", a.albumSongs).Methods("GET")
 
 	r.HandleFunc("/artists", a.artists).Methods("GET")
-	r.HandleFunc("/artists/{id}/songs", a.artistSongs).Methods("GET")
 
 	http.Handle("/", r)
 
-	fmt.Printf("serving %d items...", a.lib.Size())
+	fmt.Printf("serving %d items...\n", a.lib.Size())
 	return http.ListenAndServe(":4000", cors.Default().Handler(r))
 }

@@ -13,16 +13,22 @@ import (
 )
 
 type Library struct {
-	metadata map[string]metadata.Metadata
-	dir      string
-	fs       fs.FS
+	dir string
+	fs  fs.FS
+
+	albums  map[string][]metadata.Metadata
+	artists map[string][]metadata.Metadata
+	songs   map[string]metadata.Metadata
 }
 
 func New(dir string) *Library {
 	return &Library{
-		metadata: map[string]metadata.Metadata{},
-		dir:      dir,
-		fs:       os.DirFS(dir),
+		dir: dir,
+		fs:  os.DirFS(dir),
+
+		albums:  map[string][]metadata.Metadata{},
+		artists: map[string][]metadata.Metadata{},
+		songs:   map[string]metadata.Metadata{},
 	}
 }
 
@@ -65,14 +71,16 @@ func (l *Library) Init() error {
 	}
 
 	for _, m := range metadata {
-		l.metadata[m.ID] = m
+		l.albums[m.Album] = append(l.albums[m.Album], m)
+		l.artists[m.Artist] = append(l.artists[m.Artist], m)
+		l.songs[m.ID] = m
 	}
 
 	return nil
 }
 
 func (l *Library) Size() int {
-	return len(l.metadata)
+	return len(l.songs)
 }
 
 var supportedMimetypes = map[string]struct{}{
