@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 )
 
@@ -66,13 +67,19 @@ type metadata struct {
 	TrackNumber anyString `json:"TrackNumber"`
 }
 
-func (m *metadata) validate() error {
+func (m *metadata) validate(root string) error {
 	if m.Album == "" && m.Product != "" {
 		m.Album = m.Product
 	}
 
 	if m.ID == "" || m.Title == "" || m.Artist == "" || m.Album == "" {
 		return fmt.Errorf("missing fields: %s", m.ID)
+	}
+
+	if rel, err := filepath.Rel(root, string(m.ID)); err != nil {
+		return fmt.Errorf("rel: %v", err)
+	} else {
+		m.ID = anyString(rel)
 	}
 
 	return nil
@@ -128,7 +135,7 @@ func Fetch(root string, files []string) ([]Metadata, error) {
 
 	var exportedMetadatas []Metadata
 	for _, metadata := range metadatas {
-		if err := metadata.validate(); err != nil {
+		if err := metadata.validate(root); err != nil {
 			return nil, fmt.Errorf("validate: %v", err)
 		}
 
