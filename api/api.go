@@ -35,6 +35,6 @@ func (a *API) Run() error {
 
 	http.Handle("/", r)
 
-	fmt.Println("running api...")
+	fmt.Printf("serving %d items...", a.lib.Size())
 	return http.ListenAndServe(":4000", cors.Default().Handler(r))
 }
