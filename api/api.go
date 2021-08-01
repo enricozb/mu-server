@@ -1,13 +1,21 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+
+	"github.com/enricozb/mu-server/library"
 )
 
 type API struct {
+	lib *library.Library
+}
+
+func New(lib *library.Library) *API {
+	return &API{lib: lib}
 }
 
 func (a *API) Run() error {
@@ -27,5 +35,6 @@ func (a *API) Run() error {
 
 	http.Handle("/", r)
 
+	fmt.Println("running api...")
 	return http.ListenAndServe(":4000", cors.Default().Handler(r))
 }
