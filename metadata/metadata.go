@@ -1,13 +1,16 @@
 package metadata
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"runtime"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 type Metadata struct {
@@ -19,128 +22,135 @@ type Metadata struct {
 
 	// optional metadata
 
-	Date  string `json:"year,omitempty"`
-	Track string `json:"track,omitempty"`
+	Date     string `json:"year,omitempty"`
+	Position string `json:"track,omitempty"`
 }
 
-// anyString is a type that unmarshals json strings and numbers to a golang string.
-type anyString string
+// track is structured to match mediainfo's output
+type track struct {
+	Type string `json:"@type"`
 
-func (s *anyString) UnmarshalJSON(data []byte) error {
-	var v interface{}
-	if err := json.Unmarshal(data, &v); err != nil {
-		return err
-	}
+	// required
 
-	switch v := v.(type) {
-	case string:
-		*s = anyString(v)
-	case int:
-		*s = anyString(strconv.Itoa(v))
-	case float64:
-		*s = anyString(fmt.Sprintf("%g", v))
-	default:
-		return fmt.Errorf("unexpected type: %T", v)
-	}
+	Album    string `json:"Album"`
+	Artist   string `json:"Performer"`
+	Duration string `json:"Duration"`
+	Title    string `json:"Track"`
 
-	return nil
+	// optional
+
+	Date     string `json:"Recorded_Date"`
+	Position string `json:"Track_Position"`
 }
 
+// metadata is structured to match mediainfo's output
 type metadata struct {
-	// required metadata
+	ID string `json:"@ref"`
 
-	ID       anyString `json:"SourceFile"`
-	Album    anyString `json:"Album"`
-	Artist   anyString `json:"Artist"`
-	Duration anyString `json:"Duration"`
-	Title    anyString `json:"Title"`
+	Tracks []track `json:"track"`
 
-	// optional metadata
-
-	Date  anyString `json:"Year"`
-	Track anyString `json:"Track"`
-
-	// substitute fields
-
-	// Product is used in place of Album if it's not present.
-	Product     anyString `json:"Product"`
-	TrackNumber anyString `json:"TrackNumber"`
+	GeneralIdx int
 }
 
-func (m *metadata) validate(root string) error {
-	if m.Album == "" && m.Product != "" {
-		m.Album = m.Product
+func (m *metadata) validate(root string) (err error) {
+	var t track
+	for i, track := range m.Tracks {
+		if track.Type == "General" {
+			t = track
+			m.GeneralIdx = i
+			break
+		}
 	}
 
-	if m.ID == "" || m.Title == "" || m.Artist == "" || m.Album == "" {
-		return fmt.Errorf("missing fields: %s", m.ID)
+	if t == (track{}) {
+		return fmt.Errorf("no 'General' track: %s", m.ID)
 	}
 
-	if rel, err := filepath.Rel(root, string(m.ID)); err != nil {
+	if t.Title == "" || t.Artist == "" || t.Album == "" || t.Duration == "" {
+		return fmt.Errorf("missing fields: %+v", t)
+	}
+
+	if m.ID, err = filepath.Rel(root, string(m.ID)); err != nil {
 		return fmt.Errorf("rel: %v", err)
-	} else {
-		m.ID = anyString(rel)
 	}
 
 	return nil
 }
 
+// export must be called after a call to `validate`.
 func (m *metadata) export() Metadata {
+	t := m.Tracks[m.GeneralIdx]
 	return Metadata{
-		ID:       string(m.ID),
-		Album:    string(m.Album),
-		Artist:   string(m.Artist),
-		Duration: string(m.Duration),
-		Title:    string(m.Title),
-		Date:     string(m.Date),
-		Track:    string(m.Track),
+		ID:       m.ID,
+		Album:    t.Album,
+		Artist:   t.Artist,
+		Duration: t.Duration,
+		Title:    t.Title,
+		Date:     t.Date,
+		Position: t.Position,
 	}
 }
 
 func Fetch(root string, files []string) ([]Metadata, error) {
-	tmp, err := ioutil.TempFile("", "mu-server-files")
-	if err != nil {
-		return nil, fmt.Errorf("temp file :%v", err)
-	}
+	var g errgroup.Group
+	var mu sync.Mutex
+	ctx := context.Background()
+	workers := runtime.GOMAXPROCS(0)
+	sem := semaphore.NewWeighted(int64(workers))
 
-	for _, file := range files {
-		tmp.Write(append([]byte(file), '\n'))
-	}
-	tmp.Close()
-	defer os.Remove(tmp.Name())
-
-	out, err := exec.Command(
-		"exiftool",
-		"-@", tmp.Name(),
-		"-json",
-
-		"-Album",
-		"-Artist",
-		"-Duration",
-		"-Product",
-		"-Title",
-		"-TrackNumber",
-		"-Track",
-		"-Year",
-	).Output()
-
-	if err != nil {
-		return nil, fmt.Errorf("exec exiftool: %v", err)
-	}
+	fmt.Printf("working %d\n", workers)
 
 	var metadatas []metadata
-	if err := json.Unmarshal(out, &metadatas); err != nil {
-		return nil, fmt.Errorf("unmarshal: %v", err)
+	fetch := func(f string) error {
+		var media struct {
+			Metadata metadata `json:"media"`
+		}
+
+		out, err := exec.Command("mediainfo", "--Output=JSON", f).Output()
+		if err != nil {
+			return fmt.Errorf("exec mediainfo: %v", err)
+		}
+
+		if err := json.Unmarshal(out, &media); err != nil {
+			return fmt.Errorf("unmarshal: %v", err)
+		}
+
+		mu.Lock()
+		metadatas = append(metadatas, media.Metadata)
+		mu.Unlock()
+
+		return nil
 	}
 
-	var exportedMetadatas []Metadata
+	for _, f := range files {
+		g.Go(func(f string) func() error {
+			return func() error {
+				if err := sem.Acquire(ctx, 1); err != nil {
+					return fmt.Errorf("acquire: %v", err)
+				}
+				defer sem.Release(1)
+
+				if err := fetch(f); err != nil {
+					return fmt.Errorf("fetch: %v", err)
+				}
+
+				return nil
+			}
+		}(f))
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("wait: %v", err)
+	}
+
+	var exported []Metadata
 	for _, metadata := range metadatas {
 		if err := metadata.validate(root); err != nil {
 			return nil, fmt.Errorf("validate: %v", err)
 		}
 
-		exportedMetadatas = append(exportedMetadatas, metadata.export())
+		exported = append(exported, metadata.export())
 	}
 
-	return exportedMetadatas, nil
+	return exported, nil
 }
