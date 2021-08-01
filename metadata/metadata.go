@@ -38,7 +38,7 @@ func (s *anyString) UnmarshalJSON(data []byte) error {
 	case int:
 		*s = anyString(strconv.Itoa(v))
 	case float64:
-		*s = anyString(fmt.Sprintf("%f", v))
+		*s = anyString(fmt.Sprintf("%g", v))
 	default:
 		return fmt.Errorf("unexpected type: %T", v)
 	}
