@@ -1,9 +1,12 @@
 package metadata
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -151,4 +154,27 @@ func Fetch(root string, files []string) ([]Metadata, error) {
 	}
 
 	return exported, nil
+}
+
+func Cover(path string) (io.Reader, error) {
+	// --Cover_Data from: https://sourceforge.net/p/mediainfo/discussion/297610/thread/aeb4222d/#c9a7
+	out, err := exec.Command("mediainfo", "--Full", "--Cover_Data=base64", path).Output()
+	if err != nil {
+		return nil, fmt.Errorf("exec mediainfo: %v: %s", err, out)
+	}
+
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("Cover_Data")) {
+			parts := bytes.SplitN(line, []byte(":"), 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("expected 2 parts but got %d", len(parts))
+			} else if parts[1][0] != ' ' {
+				return nil, fmt.Errorf("expected byte '%b' but got '%b'", ' ', parts[1][0])
+			}
+
+			return base64.NewDecoder(base64.StdEncoding, bytes.NewReader(parts[1][1:])), nil
+		}
+	}
+
+	return nil, fmt.Errorf("no cover data")
 }

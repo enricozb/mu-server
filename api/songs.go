@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -30,8 +31,17 @@ func (a *API) song(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-func (a *API) songCover(w http.ResponseWriter, r *http.Request) {}
+func (a *API) songCover(w http.ResponseWriter, r *http.Request) {
+	song := mux.Vars(r)["id"]
+	data, err := a.lib.SongCover(song)
 
-// TODO: add ->AAC conversion
-//        stream the output of the ffmpeg conversion
-// TODO: add cover extraction
+	if err != nil {
+		http.Error(w, fmt.Errorf("song cover: %v", err).Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := io.Copy(w, data); err != nil {
+		http.Error(w, fmt.Errorf("copy: %v", err).Error(), http.StatusInternalServerError)
+		return
+	}
+}

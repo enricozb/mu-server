@@ -22,9 +22,9 @@ func New(lib *library.Library) *API {
 func log(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path, err := url.PathUnescape(r.RequestURI); err != nil {
-			fmt.Printf("%s: %s\n", r.Method, path)
-		} else {
 			fmt.Printf("%s: %s\n", r.Method, r.RequestURI)
+		} else {
+			fmt.Printf("%s: %s\n", r.Method, path)
 		}
 		next.ServeHTTP(w, r)
 	})
