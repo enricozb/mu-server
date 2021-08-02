@@ -98,8 +98,6 @@ func Fetch(root string, files []string) ([]Metadata, error) {
 	workers := runtime.GOMAXPROCS(0)
 	sem := semaphore.NewWeighted(int64(workers))
 
-	fmt.Printf("working %d\n", workers)
-
 	var metadatas []metadata
 	fetch := func(f string) error {
 		var media struct {

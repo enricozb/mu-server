@@ -83,6 +83,14 @@ func (l *Library) Size() int {
 	return len(l.songs)
 }
 
+func (l *Library) Abs(song string) (string, error) {
+	if filepath.IsAbs(song) {
+		return "", fmt.Errorf("is abs: %s", song)
+	}
+
+	return filepath.Join(l.dir, song), nil
+}
+
 var supportedMimetypes = map[string]struct{}{
 	"audio/flac":  {},
 	"audio/m4a":   {},
