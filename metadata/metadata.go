@@ -176,5 +176,5 @@ func Cover(path string) (io.Reader, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("no cover data")
+	return nil, fmt.Errorf("no cover data: %s", path)
 }

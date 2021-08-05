@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -74,6 +75,12 @@ func (l *Library) Init() error {
 		l.albums[m.Album] = append(l.albums[m.Album], m)
 		l.artists[m.Artist] = append(l.artists[m.Artist], m)
 		l.songs[m.ID] = m
+	}
+
+	for album := range l.albums {
+		sort.Slice(l.albums[album], func(i, j int) bool {
+			return strings.TrimLeft(l.albums[album][i].Position, "0") < strings.TrimLeft(l.albums[album][j].Position, "0")
+		})
 	}
 
 	return nil
